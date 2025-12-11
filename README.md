@@ -21,18 +21,9 @@ View your app in AI Studio: https://ai.studio/apps/temp/1
 
 ## Deploy to Vercel
 
-1. If you haven't already, create a new file named `vercel.json` in the root of your project and add the following content:
-
-```json
-{
-  "build": {
-    "env": {
-      "GEMINI_API_KEY": "@gemini-api-key"
-    }
-  }
-}
-```
-
-2. When deploying to Vercel, make sure to set the `GEMINI_API_KEY` environment variable to your Gemini API key.
-
-3. Your app will be deployed and accessible with a public URL.
+1. Push your project to a Git repository (e.g., GitHub, GitLab).
+2. Import your project into Vercel.
+3. During the project setup in Vercel, add an Environment Variable:
+    - **Name:** `GEMINI_API_KEY`
+    - **Value:** Paste your Gemini API key here.
+4. Deploy. Your app will be deployed and accessible with a public URL.
