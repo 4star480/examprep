@@ -73,11 +73,11 @@ const STUDY_GUIDE_SCHEMA: Schema = {
 };
 
 export const generateStudyGuide = async (files: File[]): Promise<StudyGuide> => {
-  if (!process.env.API_KEY) {
-    throw new Error("API Key is missing. Please set REACT_APP_GEMINI_API_KEY or process.env.API_KEY");
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error("API Key is missing. Please set the GEMINI_API_KEY environment variable.");
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
   // Convert files to base64 parts
   const fileParts = await Promise.all(
