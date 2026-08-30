@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Plus, Trash2, Download, Upload, X } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Plus, Trash2, Download, Upload, X, Search } from 'lucide-react';
 import { PortfolioTrade } from '@/types';
 import { formatCurrency, formatDate } from '@/utils/format';
+import { searchStocks, StockEntry } from '@/data/stockDirectory';
 
 interface PortfolioProps {
   isDark: boolean;
@@ -20,15 +21,70 @@ export const Portfolio: React.FC<PortfolioProps> = ({
   exportPortfolio, importPortfolio,
 }) => {
   const [showForm, setShowForm] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<StockEntry[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedStock, setSelectedStock] = useState<StockEntry | null>(null);
   const [form, setForm] = useState({
     symbol: '', name: '', market: 'US' as 'US' | 'NGX',
     quantity: '', buyPrice: '', date: new Date().toISOString().split('T')[0], notes: '',
   });
+  const searchRef = useRef<HTMLDivElement>(null);
 
   const heading = isDark ? 'text-white' : 'text-gray-900';
   const label = isDark ? 'text-slate-400' : 'text-gray-500';
   const card = `rounded-xl border ${isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-white border-gray-200 shadow-sm'}`;
   const input = `w-full px-3 py-2 rounded-lg border text-sm ${isDark ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-500' : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-400'}`;
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setSelectedStock(null);
+    if (value.length >= 1) {
+      const results = searchStocks(value, form.market);
+      setSuggestions(results);
+      setShowSuggestions(results.length > 0);
+    } else {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+    setForm((f) => ({ ...f, symbol: value.toUpperCase(), name: '', buyPrice: '' }));
+  };
+
+  const handleSelectStock = (stock: StockEntry) => {
+    setSelectedStock(stock);
+    setSearchQuery(`${stock.symbol} — ${stock.name}`);
+    setShowSuggestions(false);
+    setForm((f) => ({
+      ...f,
+      symbol: stock.symbol,
+      name: stock.name,
+      market: stock.market,
+      buyPrice: stock.price.toString(),
+    }));
+  };
+
+  const handleMarketChange = (market: 'US' | 'NGX') => {
+    setForm((f) => ({ ...f, market }));
+    setSelectedStock(null);
+    setSearchQuery('');
+    setSuggestions([]);
+    setForm((f) => ({ ...f, market, symbol: '', name: '', buyPrice: '', quantity: '' }));
+  };
+
+  const quantity = parseFloat(form.quantity) || 0;
+  const buyPrice = parseFloat(form.buyPrice) || 0;
+  const total = quantity * buyPrice;
+  const currencySymbol = form.market === 'US' ? '$' : '₦';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,8 +99,15 @@ export const Portfolio: React.FC<PortfolioProps> = ({
       date: form.date,
       notes: form.notes || undefined,
     });
-    setForm({ symbol: '', name: '', market: 'US', quantity: '', buyPrice: '', date: new Date().toISOString().split('T')[0], notes: '' });
+    resetForm();
     setShowForm(false);
+  };
+
+  const resetForm = () => {
+    setForm({ symbol: '', name: '', market: 'US', quantity: '', buyPrice: '', date: new Date().toISOString().split('T')[0], notes: '' });
+    setSearchQuery('');
+    setSelectedStock(null);
+    setSuggestions([]);
   };
 
   const usTrades = trades.filter((t) => t.market === 'US');
@@ -66,7 +129,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({
             <input type="file" accept=".json" className="hidden" onChange={(e) => e.target.files?.[0] && importPortfolio(e.target.files[0])} />
           </label>
           <button
-            onClick={() => setShowForm(true)}
+            onClick={() => { resetForm(); setShowForm(true); }}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition"
           >
             <Plus className="w-4 h-4" /> Log Trade
@@ -102,33 +165,99 @@ export const Portfolio: React.FC<PortfolioProps> = ({
               <button onClick={() => setShowForm(false)} className={label}><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleSubmit} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={`text-xs ${label}`}>Ticker Symbol *</label>
-                  <input className={input} placeholder="e.g. AAPL" value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value })} required />
-                </div>
-                <div>
-                  <label className={`text-xs ${label}`}>Market *</label>
-                  <select className={input} value={form.market} onChange={(e) => setForm({ ...form, market: e.target.value as 'US' | 'NGX' })}>
-                    <option value="US">🇺🇸 US</option>
-                    <option value="NGX">🇳🇬 NGX</option>
-                  </select>
-                </div>
-              </div>
+              {/* Market selector */}
               <div>
-                <label className={`text-xs ${label}`}>Company Name</label>
-                <input className={input} placeholder="e.g. Apple Inc." value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                <label className={`text-xs ${label}`}>Market *</label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <button type="button" onClick={() => handleMarketChange('US')}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium border transition ${form.market === 'US'
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : isDark ? 'border-slate-600 text-slate-400 hover:border-slate-500' : 'border-gray-300 text-gray-600 hover:border-gray-400'
+                    }`}
+                  >🇺🇸 US Market</button>
+                  <button type="button" onClick={() => handleMarketChange('NGX')}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium border transition ${form.market === 'NGX'
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : isDark ? 'border-slate-600 text-slate-400 hover:border-slate-500' : 'border-gray-300 text-gray-600 hover:border-gray-400'
+                    }`}
+                  >🇳🇬 NGX Market</button>
+                </div>
               </div>
+
+              {/* Stock search with autocomplete */}
+              <div ref={searchRef} className="relative">
+                <label className={`text-xs ${label}`}>Search Stock *</label>
+                <div className="relative">
+                  <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${label}`} />
+                  <input
+                    className={`${input} pl-9`}
+                    placeholder={form.market === 'US' ? 'Type ticker or name... e.g. AAPL, Apple' : 'Type ticker or name... e.g. GTCO, Zenith'}
+                    value={searchQuery}
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                    onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+                    required
+                  />
+                </div>
+                {showSuggestions && (
+                  <div className={`absolute z-10 w-full mt-1 rounded-lg border shadow-xl max-h-56 overflow-y-auto ${isDark ? 'bg-slate-800 border-slate-600' : 'bg-white border-gray-200'}`}>
+                    {suggestions.map((stock) => (
+                      <button
+                        key={stock.symbol}
+                        type="button"
+                        onClick={() => handleSelectStock(stock)}
+                        className={`w-full text-left px-3 py-2.5 flex items-center justify-between transition ${isDark ? 'hover:bg-slate-700' : 'hover:bg-gray-50'}`}
+                      >
+                        <div>
+                          <span className={`font-semibold text-sm ${heading}`}>{stock.symbol}</span>
+                          <span className={`text-xs ml-2 ${label}`}>{stock.name}</span>
+                        </div>
+                        <span className={`text-sm font-medium ${heading}`}>
+                          {stock.currency === 'USD' ? '$' : '₦'}{stock.price.toLocaleString()}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {selectedStock && (
+                  <div className={`mt-1.5 px-3 py-2 rounded-lg text-xs flex items-center justify-between ${isDark ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-50 text-emerald-700'}`}>
+                    <span>✓ {selectedStock.symbol} — {selectedStock.name}</span>
+                    <span className="font-semibold">{currencySymbol}{selectedStock.price.toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Quantity + Price */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={`text-xs ${label}`}>Quantity *</label>
-                  <input className={input} type="number" step="any" min="0" placeholder="0.028" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} required />
+                  <input className={input} type="number" step="any" min="0"
+                    placeholder={form.market === 'US' ? '0.028' : '150'}
+                    value={form.quantity}
+                    onChange={(e) => setForm({ ...form, quantity: e.target.value })} required />
                 </div>
                 <div>
-                  <label className={`text-xs ${label}`}>Buy Price ({form.market === 'US' ? '$' : '₦'}) *</label>
-                  <input className={input} type="number" step="any" min="0" placeholder="178.50" value={form.buyPrice} onChange={(e) => setForm({ ...form, buyPrice: e.target.value })} required />
+                  <label className={`text-xs ${label}`}>Price per Share ({currencySymbol}) *</label>
+                  <input className={input} type="number" step="any" min="0" placeholder="0.00"
+                    value={form.buyPrice}
+                    onChange={(e) => setForm({ ...form, buyPrice: e.target.value })} required />
                 </div>
               </div>
+
+              {/* Auto-calculated total */}
+              {quantity > 0 && buyPrice > 0 && (
+                <div className={`px-4 py-3 rounded-lg border-2 border-dashed ${isDark ? 'border-emerald-700 bg-emerald-900/20' : 'border-emerald-300 bg-emerald-50'}`}>
+                  <div className="flex items-center justify-between">
+                    <span className={`text-sm ${label}`}>Total Cost</span>
+                    <span className={`text-xl font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                      {formatCurrency(total, form.market === 'US' ? 'USD' : 'NGN')}
+                    </span>
+                  </div>
+                  <p className={`text-xs mt-1 ${label}`}>
+                    {quantity} share{quantity !== 1 ? 's' : ''} × {currencySymbol}{buyPrice.toLocaleString()} per share
+                  </p>
+                </div>
+              )}
+
               <div>
                 <label className={`text-xs ${label}`}>Date</label>
                 <input className={input} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
@@ -137,8 +266,9 @@ export const Portfolio: React.FC<PortfolioProps> = ({
                 <label className={`text-xs ${label}`}>Notes</label>
                 <input className={input} placeholder="Optional notes..." value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
               </div>
-              <button type="submit" className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition">
-                Add Trade
+              <button type="submit" disabled={!form.symbol || !form.quantity || !form.buyPrice}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition">
+                Add Trade {total > 0 ? `(${formatCurrency(total, form.market === 'US' ? 'USD' : 'NGN')})` : ''}
               </button>
             </form>
           </div>
